@@ -221,4 +221,4 @@ async def addrole(ctx, user: discord.Member, role: discord.Role):
         await ctx.send(f"{user.mention} đã có {role.name} role.")
 	
 	
-bot.run("OTc1ODUyNTYxODk2NzMwNzE0.GRn8P6.QfLeXG_OGzYVKmQQcLP9_v-BEWHrHntN1PDvro")
+bot.run("")
