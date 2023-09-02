@@ -567,4 +567,4 @@ async def xemip(ctx, member: discord.Member = None):
         await ctx.send("Không thể lấy địa chỉ IP của người dùng.")
         
 	
-bot.run("OTc1ODUyNTYxODk2NzMwNzE0.GN_fC0.QL0taNfglD3Dy6QJP-rp3vqzuPg3Pjy8C3Tfn8")
+bot.run("")
