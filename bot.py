@@ -2,15 +2,16 @@ import discord
 import json
 import random
 import pyowm
+from prettytable import PrettyTable
 import aiohttp
 import sqlite3
 import requests
-import youtube_dl
+import string
 import subprocess 
 import sqlite3
+import datetime
 import sys
 import asyncio
-from newsapi import NewsApiClient
 from discord.ext import commands, tasks
 from discord.ext.commands import BucketType, cooldown
 intents = discord.Intents.all()
@@ -19,82 +20,33 @@ intents.members = True
 intents.guilds = True
 intents.emojis = True
 
-bot = commands.Bot(command_prefix=".", case_insensitive= True, intents=intents)
-session = aiohttp.ClientSession()
+bot = commands.Bot(command_prefix="", case_insensitive= True, intents=intents, help_command= None)
 
-is_restarting = False
 
 owm = pyowm.OWM('63eb1b66f709c2bfe5f1770fe88fbc56')
 
 muted_users = {}
 
-NEWS_API_KEY = '98a1bf4eb7c543fd9d2b4adab11767b0'
+keys = {}
 
-newsapi = NewsApiClient(api_key=NEWS_API_KEY)
+valid_users = []
 
-def buy_fishing_rod(user_data):
-    if 'fishing_rod' not in user_data:
-        user_data['fishing_rod'] = False
 
-    if user_data['fishing_rod']:
-        return "Bạn đã có một cây cần câu."
-    else:
-        user_data['balance'] -= 100
-        user_data['fishing_rod'] = True
-        return "Bạn đã mua một cây cần câu thành công."
+conn = sqlite3.connect('data.db')
+cursor = conn.cursor()
 
-def fish(user_data):
-    if 'fishing_rod' not in user_data or not user_data['fishing_rod']:
-        return "Bạn chưa có cây cần câu."
+# Tạo bảng users trong cơ sở dữ liệu nếu chưa tồn tại
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY,
+        username TEXT,
+        money INTEGER
+    )
+''')
+                  
+conn.commit()
+bot.help_command = None
 
-    if 'fish_caught' not in user_data:
-        user_data['fish_caught'] = []
-
-    caught_fish = random.choice(['Cá vàng', 'Cá bớp', 'Cá chép', 'Cá trê'])
-    user_data['fish_caught'].append(caught_fish)
-    return f"Bạn đã câu được {caught_fish}."
-
-def sell_fish(user_data):
-    if 'fish_caught' not in user_data or not user_data['fish_caught']:
-        return "Bạn chưa câu được cá nào."
-
-    total_earnings = 0
-    for fish in user_data['fish_caught']:
-        if fish == 'Cá vàng':
-            total_earnings += 50
-        elif fish == 'Cá bớp':
-            total_earnings += 30
-        elif fish == 'Cá chép':
-            total_earnings += 20
-        elif fish == 'Cá trê':
-            total_earnings += 10
-
-    user_data['balance'] += total_earnings
-    user_data['fish_caught'] = []
-    return f"Bạn đã bán cá thành công và nhận được {total_earnings} tiền."
-
-# Load dữ liệu từ file user_data.json
-def load_user_data():
-    try:
-        with open('user_data.json', 'r') as file:
-            user_data = json.load(file)
-    except FileNotFoundError:
-        user_data = {}
-    return user_data
-
-def save_user_data(user_data):
-    with open('user_data.json', 'w') as file:
-        json.dump(user_data, file)
-
-# Dữ liệu lưu trữ thông tin người dùng
-user_data = load_user_data()
-
-try:
-    with open('user_data.json', 'r') as f:
-        user_data = json.load(f)
-except FileNotFoundError:
-    user_data = {}
-      
 # Event
 @bot.event
 async def on_disconnect():
@@ -163,12 +115,7 @@ async def on_member_remove(member):
 async def on_ready():
     print(f'đã vào acc {bot.user.name} - {bot.user.id}')
     await bot.change_presence(activity=discord.Game(name="discord 😛😛 "))
-    refresh.start()
-      
-@tasks.loop(seconds=30)
-async def refresh():
-    print('làm mới')
-       
+
 @bot.event
 async def on_message(message):
     prefixes = load_prefixes()
@@ -178,7 +125,7 @@ async def on_message(message):
         bot.command_prefix = custom_prefix
 
     await bot.process_commands(message)
-    
+
     # Load prefixes from a JSON file
 def load_prefixes():
     try:
@@ -187,33 +134,143 @@ def load_prefixes():
     except (FileNotFoundError, json.JSONDecodeError):
         prefixes = {}
     return prefixes
-    
+
     # Save prefixes to the JSON file
 def save_prefixes(prefixes):
     with open('prefixes.json', 'w') as f:
         json.dump(prefixes, f)
-	
+
 # commands
 @bot.command()
-async def muacancau(ctx):
-    user_data = load_user_data()
-    response = buy_fishing_rod(user_data)
-    save_user_data(user_data)
-    await ctx.send(response)
+async def trogiup(ctx):
+    embed = discord.Embed(title="Danh sách lệnh và cách sử dụng", description="Danh sách các lệnh và cách sử dụng của bot", color=discord.Color.green())
+
+    for command in bot.commands:
+        docstring = command.callback.__doc__  # Trích xuất docstring của mỗi lệnh
+        if docstring:
+            # Nếu có docstring, chúng ta sẽ phân tách nó để hiển thị tên lệnh và cách sử dụng
+            command_info = docstring.split("- Sử dụng:")
+            embed.add_field(name=command_info[0].strip(), value=command_info[1].strip(), inline=False)
+        else:
+            embed.add_field(name=f".{taixiu}", value="tài hoặc xỉu", inline=False)
+
+    await ctx.send(embed=embed)
 
 @bot.command()
-async def cauca(ctx):
-    user_data = load_user_data()
-    response = fish(user_data)
-    save_user_data(user_data)
-    await ctx.send(response)
+@commands.has_permissions(administrator=True)
+async def bangthongke(ctx):
+    guild = ctx.guild
+
+    member_count = 0
+    bot_count = 0
+    role_count = {}
+
+    for member in guild.members:
+        if member.bot:
+            bot_count += 1
+        else:
+            member_count += 1
+        for role in member.roles:
+            role_count[role.name] = role_count.get(role.name, 0) + 1
+
+    # Tạo bảng thống kê
+    table = PrettyTable()
+    table.field_names = ["Category", "Count"]
+    table.add_row(["Total Members", member_count])
+    table.add_row(["Total Bots", bot_count])
+    table.add_row(["Role", "Count"])
+    for role, count in role_count.items():
+        table.add_row([role, count])
+
+    # Gửi bảng thống kê trong channel
+    await ctx.send(f"```{table}```")
+
 
 @bot.command()
-async def banca(ctx):
-    user_data = load_user_data()
-    response = sell_fish(user_data)
-    save_user_data(user_data)
-    await ctx.send(response)
+@commands.has_permissions(administrator=True)
+async def taokey(ctx):
+    # Generate a random key
+    key = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+
+    # Set the expiry date to 1 day from now
+    expiry_date = datetime.datetime.now() + datetime.timedelta(days=1)
+
+    # Store the key and expiry date in the dictionary
+    keys[key] = expiry_date
+
+    await ctx.send(f'Key generated: {key}\nExpiry date: {expiry_date}')
+
+@bot.command()
+async def nhapkey(ctx, key):
+    # Check if the key exists and is not expired
+    if key in keys and datetime.datetime.now() <= keys[key]:
+        # Add the user to the valid users list
+        valid_users.append(ctx.author.id)
+        await ctx.send('key đã được nhập thành công.')
+    else:
+        await ctx.send('key sai hoặc hết hạn.')
+
+@bot.command()
+async def taixiu(ctx, choice: str, amount: int):
+    if ctx.author.id in valid_users:
+        await ctx.send('Ngu!')
+    else:
+        await ctx.send('mày đéo có quyền sài khi không nhập key')
+    # Kiểm tra xem người chơi có đủ tiền không
+    user_id = ctx.author.id
+    cursor.execute("SELECT money FROM users WHERE id=?", (user_id,))
+    result = cursor.fetchone()
+
+    if result:
+        money = result[0]
+        if money < amount:
+            await ctx.send("Bạn không đủ tiền để chơi!")
+            return
+    else:
+        # Nếu người chơi chưa có trong cơ sở dữ liệu, tạo một bản ghi mới với số tiền mặc định là 0
+        cursor.execute("INSERT INTO users VALUES (?, 0)", (user_id,))
+        conn.commit()
+
+    # Lựa chọn của bot
+    bot_choice = random.choice(['tài', 'xỉu'])
+
+    # Kiểm tra kết quả và cộng/trừ tiền tương ứng
+    if choice == bot_choice:
+        await ctx.send(f"{choice}\nBạn thắng!")
+        cursor.execute("UPDATE users SET money=money+? WHERE id=?", (amount, user_id))
+    else:
+        await ctx.send(f":{bot_choice}\nBạn thua!")
+        cursor.execute("UPDATE users SET money=money-? WHERE id=?", (amount, user_id))
+
+    conn.commit()
+
+# Lệnh để kiểm tra số dư tiền của người chơi
+@bot.command()
+async def sodu(ctx):
+    user_id = ctx.author.id
+    cursor.execute("SELECT money FROM users WHERE id=?", (user_id,))
+    result = cursor.fetchone()
+
+    if result:
+        money = result[0]
+        await ctx.send(f"Số dư của bạn là: {money}")
+    else:
+        await ctx.send("Bạn chưa có số dư trong hệ thống!")
+
+# Lệnh để cộng tiền cho người chơi khi mới bắt đầu
+@bot.command()
+async def nhantien(ctx, amount: int):
+    user_id = ctx.author.id
+    cursor.execute("SELECT money FROM users WHERE id=?", (user_id,))
+    result = cursor.fetchone()
+
+    if result:
+        await ctx.send("Bạn đã có tài khoản trong hệ thống!")
+    else:
+        cursor.execute("INSERT INTO users (id, money) VALUES (?, ?)", (user_id, amount))
+
+        conn.commit()
+        await ctx.send(f"Bạn đã nhận được {amount} tiền khi bắt đầu!")
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -233,7 +290,7 @@ async def taoemoji(ctx, emoji_name, image_url):
 async def xoalenh(ctx, command_name):
     bot.remove_command(command_name)
     await ctx.send(f"Lệnh {command_name} đã được xóa khỏi bot.")
-    
+
 @bot.command()
 async def gai(ctx):
     gai_list = [
@@ -347,22 +404,7 @@ async def pray(ctx):
         image = discord.File(f)
         await ctx.send(file=image)
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def setmoney(ctx, member: discord.Member, amount: int):
-    if ctx.author.id not in user_data:
-        user_data[ctx.author.id] = {
-            'balance': 0
-        }
 
-    user_data[member.id] = {
-        'balance': amount
-    }
-
-    save_user_data(user_data)
-
-    await ctx.send(f'Số dư của {member.mention} đã được cập nhật thành {amount}!')
-    
 @bot.command()
 @commands.is_owner()
 async def tatbot(ctx):
@@ -370,32 +412,18 @@ async def tatbot(ctx):
     if is_restarting:
         await ctx.send("bot đã tắt")
         return
-    
+
     is_restarting = True
     await ctx.send("Bot tắt...")
-    
+
     await bot.change_presence(status=discord.Status.dnd)
-    
+
     await bot.close()
-    
+
     subprocess.Popen([sys.executable, __file__])
     await asyncio.sleep(1)
     sys.exit()
-    
-@bot.command()
-@commands.is_owner()
-async def baotri(ctx, status: str):
-    global is_maintenance_mode
-    if status.lower() == "on":
-        is_maintenance_mode = True
-        await bot.change_presence(status=discord.Status.dnd)
-        await ctx.send("``` Bot đã bật chế độ bảo trì ```")
-    elif status.lower() == "off":
-        is_maintenance_mode = False
-        await bot.change_presence(status=discord.Status.online)
-        await ctx.send("``` Bot đã tắt chế độ bảo trì ```")
-    else:
-        await ctx.send("``` Nhập sai rồi. Vui lòng nhập 'on' hoặc 'off' ```")
+
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -406,27 +434,27 @@ async def clear(ctx, amount=100):
 @commands.cooldown(1, 5, BucketType.user)
 async def tt(ctx, amount: int):
     user_id = str(ctx.author.id)
-    
+
     if user_id in user_data:
         balance = user_data[user_id]['balance']
         if amount > balance or amount <= 0:
             await ctx.send("đặt cược sai yêu cầu đặt lại.")
             return
-        
+
         outcome = random.choice(['win', 'lose'])
-        
+
         if outcome == 'win':
             user_data[user_id]['balance'] += amount
             await ctx.send(f"bạn đã thắng {amount} coins, số tiền mới của bạn là: {user_data[user_id]['balance']} coins")
         else:
             user_data[user_id]['balance'] -= amount
             await ctx.send(f"bạn đã thua {amount} coins, số tiền mới của bạn là: {user_data[user_id]['balance']} coins")
-        
+
         with open('user_data.json', 'w') as f:
             json.dump(user_data, f, indent=4)
     else:
         await ctx.send("bạn cần .choi để nhận có tiền chơi")
-        
+
 @tt.error
 async def tt_error(ctx, error):
     if isinstance(error, commands.CommandOnCooldown):
@@ -435,7 +463,7 @@ async def tt_error(ctx, error):
 @bot.command()
 async def choi(ctx):
     user_id = str(ctx.author.id)
-    
+
     if user_id not in user_data:
         user_data[user_id] = {'balance': 1000}
         with open('user_data.json', 'w') as f:
@@ -471,15 +499,15 @@ async def lock(ctx):
 @commands.has_permissions(administrator=True)
 async def mute(ctx, member: discord.Member):
     muted_role = discord.utils.get(ctx.guild.roles, name="Muted")
-    
+
     if muted_role is None:
         muted_role = await ctx.guild.create_role(name="Muted")
         for channel in ctx.guild.channels:
              await channel.set_permissions(muted_role, send_messages=False)
-    
+
     await member.add_roles(muted_role)
     muted_users[member.muted.id] = muted_role.id
-    
+
     await ctx.send(f"{member.mention} mày đã bị khóa mõm.")
 
 @bot.command()
@@ -490,13 +518,13 @@ async def news(ctx, *, query=''):
 
     try:
         news_data = newsapi.get_top_headlines(q=query, language='en', page_size=5)
-        
+
         if news_data['totalResults'] > 0:
             for article in news_data['articles']:
                 title = article['title']
                 description = article['description']
                 url = article['url']
-                
+
                 news_embed = discord.Embed(title=title, description=description, url=url, color=discord.Color.blue())
                 await ctx.send(embed=news_embed)
         else:
@@ -517,31 +545,31 @@ async def setprefix(ctx, new_prefix):
     prefixes[str(ctx.guild.id)] = new_prefix
     save_prefixes(prefixes)
     await ctx.send(f'Prefix mới là: {new_prefix}')
-    
+
 @bot.command()
 async def ping(ctx):
-	await ctx.send("ping của bot là **{0}**".format(round(bot.latency * 1000)))
-		
+  await ctx.send("ping của bot là **{0}**".format(round(bot.latency * 1000)))
+
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def kick(ctx, member: discord.Member, reason="không có lý do"):
-		await ctx.send(f"{member.mention} đã bị kick |  Reason:  {reason}")
-		await member.send(f"chúc mừng mày đã cút khỏi **server** |  Reason:  {reason}")
-		await member.kick(reason=reason)
-		
+    await ctx.send(f"{member.mention} đã bị kick |  Reason:  {reason}")
+    await member.send(f"chúc mừng mày đã cút khỏi **server** |  Reason:  {reason}")
+    await member.kick(reason=reason)
+
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def ban(ctx, member: discord.Member, reason="không có lý do"):
-	await ctx.send(f"{member.mention} đã bị ban |  Reason:  {reason}")	
-	await member.send(f"óc cặc bị baned haha **server** |  Reason:  {reason}")
-	await member.ban(reason=reason)
-		
+  await ctx.send(f"{member.mention} đã bị ban |  Reason:  {reason}")	
+  await member.send(f"óc cặc bị baned haha **server** |  Reason:  {reason}")
+  await member.ban(reason=reason)
+
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def unban(ctx, member: discord.Member):
-	await ctx.send(f"{member.mention} đã được unban")
-	await member.send(f"địt mẹ hên vậy , đã được unband **server**")
-	await member.unban()
+  await ctx.send(f"{member.mention} đã được unban")
+  await member.send(f"địt mẹ hên vậy , đã được unband **server**")
+  await member.unban()
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -551,20 +579,7 @@ async def addrole(ctx, user: discord.Member, role: discord.Role):
         await ctx.send(f"cho {role.name} role {user.mention}.")
     else:
         await ctx.send(f"{user.mention} đã có {role.name} role.")
-        
-@bot.command()
-async def xemip(ctx, member: discord.Member = None):
-    if member is None:
-        member = ctx.author
 
-    response = requests.get(f"https://ipapi.co/{member.name}/json/")
-    data = response.json()
-    ip = data.get('ip')
 
-    if ip:
-        await ctx.send(f"Địa chỉ IP của {member.name} là: {ip}")
-    else:
-        await ctx.send("Không thể lấy địa chỉ IP của người dùng.")
-        
-	
+
 bot.run("")
